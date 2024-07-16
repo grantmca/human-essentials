@@ -18,7 +18,7 @@
 #  last_request_at        :datetime
 #  last_sign_in_at        :datetime
 #  last_sign_in_ip        :inet
-#  name                   :string           default("Name Not Provided"), not null
+#  name                   :string
 #  organization_admin     :boolean
 #  provider               :string
 #  remember_created_at    :datetime
@@ -30,6 +30,7 @@
 #  created_at             :datetime         not null
 #  updated_at             :datetime         not null
 #  invited_by_id          :integer
+#  last_role_id           :bigint
 #  organization_id        :integer
 #  partner_id             :bigint
 #
@@ -45,13 +46,19 @@ FactoryBot.define do
     end
 
     after(:create) do |user, evaluator|
-      user.add_role(Role::ORG_USER, evaluator.organization)
+      if evaluator.organization
+        user.add_role(Role::ORG_USER, evaluator.organization)
+      end
     end
 
     factory :organization_admin do
       name { "Very Organized Admin" }
       after(:create) do |user, evaluator|
-        user.add_role(Role::ORG_ADMIN, evaluator.organization)
+        if evaluator.organization
+          AddRoleService.call(user_id: user.id,
+            resource_id: evaluator.organization.id,
+            resource_type: Role::ORG_ADMIN)
+        end
       end
     end
 
@@ -68,6 +75,10 @@ FactoryBot.define do
         user.add_role(Role::SUPER_ADMIN)
         user.remove_role(Role::ORG_USER, evaluator.organization)
       end
+    end
+
+    trait :no_roles do
+      organization { nil }
     end
 
     trait :deactivated do

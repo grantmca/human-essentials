@@ -16,10 +16,12 @@
 #  ndbn_member_id       :bigint
 #
 class AccountRequest < ApplicationRecord
+  has_paper_trail
   validates :name, presence: true
   validates :email, presence: true, uniqueness: true
   validates :request_details, presence: true, length: { minimum: 50 }
   validates :email, format: { with: URI::MailTo::EMAIL_REGEXP }
+  validates :organization_website, format: { with: URI::DEFAULT_PARSER.make_regexp, message: "should look like 'https://www.example.com'" }, allow_blank: true
 
   validate :email_not_already_used_by_organization
   validate :email_not_already_used_by_user

@@ -54,13 +54,15 @@ FileUtils.chdir APP_ROOT do
   system!("bundle check") || system!("bundle install")
 
   unless File.exist?('.env')
-    log "== Setup .env file from .env.example =="
+    log "== Setting up .env file from .env.example =="
     system!('cp .env.example .env')
+    log  "Check .env to see if your database credentials are correct.\nPress Enter to continue...", color: :red
+    gets
   end
 
   log "== Preparing database =="
   log "⚠️  If you use docker to run postgres, make sure your database is running ⚠️"
-  system! 'bin/rails db:setup'
+  system! 'bin/rails db:reset'
   system! 'bin/rails db:test:prepare'
 
   log "== Removing old logs, tempfiles, and jobs =="

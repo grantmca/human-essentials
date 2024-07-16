@@ -9,7 +9,6 @@
 #  updated_at      :datetime         not null
 #  organization_id :integer          not null
 #
-require 'rails_helper'
 
 RSpec.describe ItemCategory, type: :model do
   describe 'validations' do
@@ -25,5 +24,9 @@ RSpec.describe ItemCategory, type: :model do
     it { should belong_to(:organization) }
     it { should have_many(:items) }
     it { should have_and_belong_to_many(:partner_groups) }
+  end
+
+  describe "versioning" do
+    it { is_expected.to be_versioned }
   end
 end

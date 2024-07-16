@@ -9,7 +9,6 @@
 #  created_at   :datetime         not null
 #  updated_at   :datetime         not null
 #
-require "rails_helper"
 
 RSpec.describe Question, type: :model do
   describe "scope for_partners" do
@@ -89,5 +88,9 @@ RSpec.describe Question, type: :model do
       question = build(:question)
       expect(question.punctuate(sentences)).to eq "This is a sentence. This is another sentence. This is a third sentence. "
     end
+  end
+
+  describe "versioning" do
+    it { is_expected.to be_versioned }
   end
 end

@@ -5,7 +5,7 @@ class PurchasesController < ApplicationController
   def index
     setup_date_range_picker
     @purchases = current_organization.purchases
-                                     .includes(:line_items, :storage_location)
+                                     .includes(:storage_location, :vendor, line_items: [:item])
                                      .order(created_at: :desc)
                                      .class_filter(filter_params)
                                      .during(helpers.selected_range)
@@ -32,15 +32,15 @@ class PurchasesController < ApplicationController
 
   def create
     @purchase = current_organization.purchases.new(purchase_params)
-    if @purchase.save
-      @purchase.storage_location.increase_inventory @purchase
+    begin
+      PurchaseCreateService.call(@purchase)
       flash[:notice] = "New Purchase logged!"
       redirect_to purchases_path
-    else
+    rescue => e
       load_form_collections
       @purchase.line_items.build if @purchase.line_items.count.zero?
-      flash[:error] = "Failed to create purchase due to: #{@purchase.errors.full_messages}"
-      Rails.logger.error "[!] PurchasesController#create ERROR: #{@purchase.errors.full_messages}"
+      flash[:error] = "Failed to create purchase due to:\n#{e.message}"
+      Rails.logger.error "[!] PurchasesController#create ERROR: #{e.message}"
       render action: :new
     end
   end
@@ -54,6 +54,8 @@ class PurchasesController < ApplicationController
   def edit
     @purchase = current_organization.purchases.find(params[:id])
     @purchase.line_items.build
+    @audit_performed_and_finalized = Audit.finalized_since?(@purchase, @purchase.storage_location_id)
+
     load_form_collections
   end
 
@@ -64,20 +66,20 @@ class PurchasesController < ApplicationController
 
   def update
     @purchase = current_organization.purchases.find(params[:id])
-    if @purchase.replace_increase!(purchase_params)
-      redirect_to purchases_path
-    else
-      load_form_collections
-      render "edit"
-    end
+    ItemizableUpdateService.call(itemizable: @purchase,
+      params: purchase_params,
+      type: :increase,
+      event_class: PurchaseEvent)
+    redirect_to purchases_path
+  rescue => e
+    load_form_collections
+    flash[:alert] = "Error updating purchase: #{e.message}"
+    render "edit"
   end
 
   def destroy
-    ActiveRecord::Base.transaction do
-      purchase = current_organization.purchases.find(params[:id])
-      purchase.storage_location.decrease_inventory(purchase)
-      purchase.destroy!
-    end
+    purchase = current_organization.purchases.find(params[:id])
+    PurchaseDestroyService.call(purchase)
 
     flash[:notice] = "Purchase #{params[:id]} has been removed!"
     redirect_to purchases_path

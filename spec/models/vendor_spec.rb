@@ -16,8 +16,6 @@
 #  organization_id :integer
 #
 
-require "rails_helper"
-
 RSpec.describe Vendor, type: :model do
   it_behaves_like "provideable"
 
@@ -29,5 +27,9 @@ RSpec.describe Vendor, type: :model do
         expect(vendor.volume).to eq(10)
       end
     end
+  end
+
+  describe "versioning" do
+    it { is_expected.to be_versioned }
   end
 end

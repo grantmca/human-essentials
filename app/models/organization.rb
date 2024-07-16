@@ -11,18 +11,23 @@
 #  enable_child_based_requests    :boolean          default(TRUE), not null
 #  enable_individual_requests     :boolean          default(TRUE), not null
 #  enable_quantity_based_requests :boolean          default(TRUE), not null
+#  hide_package_column_on_receipt :boolean          default(FALSE)
+#  hide_value_columns_on_receipt  :boolean          default(FALSE)
 #  intake_location                :integer
 #  invitation_text                :text
 #  latitude                       :float
 #  longitude                      :float
 #  name                           :string
+#  one_step_partner_invite        :boolean          default(FALSE), not null
 #  partner_form_fields            :text             default([]), is an Array
 #  reminder_day                   :integer
 #  repackage_essentials           :boolean          default(FALSE), not null
 #  short_name                     :string
+#  signature_for_distribution_pdf :boolean          default(FALSE)
 #  state                          :string
 #  street                         :string
 #  url                            :string
+#  ytd_on_distribution_printout   :boolean          default(TRUE), not null
 #  zipcode                        :string
 #  created_at                     :datetime         not null
 #  updated_at                     :datetime         not null
@@ -31,6 +36,7 @@
 #
 
 class Organization < ApplicationRecord
+  has_paper_trail
   resourcify
 
   DIAPER_APP_LOGO = Rails.root.join("public", "img", "humanessentials_logo.png")
@@ -67,6 +73,7 @@ class Organization < ApplicationRecord
     has_many :transfers
     has_many :users, -> { distinct }, through: :roles
     has_many :vendors
+    has_many :request_units, class_name: 'Unit'
   end
 
   has_many :items, dependent: :destroy do
@@ -107,14 +114,19 @@ class Organization < ApplicationRecord
     account_request&.update!(status: "admin_approved")
   end
 
+  def flipper_id
+    "Org:#{id}"
+  end
+
   ALL_PARTIALS = [
     ['Media Information', 'media_information'],
     ['Agency Stability', 'agency_stability'],
     ['Organizational Capacity', 'organizational_capacity'],
     ['Sources of Funding', 'sources_of_funding'],
+    ['Area Served', 'area_served'],
     ['Population Served', 'population_served'],
     ['Executive Director', 'executive_director'],
-    ['Pickup Person', 'diaper_pick_up_person'],
+    ['Pickup Person', 'pick_up_person'],
     ['Agency Distribution Information', 'agency_distribution_information'],
     ['Attached Documents', 'attached_documents']
   ].freeze
@@ -123,7 +135,7 @@ class Organization < ApplicationRecord
 
   has_one_attached :logo
 
-  accepts_nested_attributes_for :users, :account_request
+  accepts_nested_attributes_for :users, :account_request, :request_units
 
   include Geocodable
 
@@ -136,6 +148,12 @@ class Organization < ApplicationRecord
   scope :alphabetized, -> { order(:name) }
   scope :search_name, ->(query) { where('name ilike ?', "%#{query}%") }
 
+  scope :is_active, -> {
+    joins(:users)
+      .where('users.last_sign_in_at > ?', 4.months.ago)
+      .distinct
+  }
+
   def assign_attributes_from_account_request(account_request)
     assign_attributes(
       name: account_request.organization_name,
@@ -147,7 +165,7 @@ class Organization < ApplicationRecord
     self
   end
 
-  # NOTE: when finding Organizations, use Organization.find_by(short_name: params[:organization_id])
+  # NOTE: when finding Organizations, use Organization.find_by(short_name: params[:organization_name])
   def to_param
     short_name
   end
@@ -175,11 +193,16 @@ class Organization < ApplicationRecord
   end
 
   def total_inventory
-    inventory_items.sum(:quantity) || 0
+    if Event.read_events?(self)
+      View::Inventory.total_inventory(id)
+    else
+      inventory_items.sum(:quantity) || 0
+    end
   end
 
   def self.seed_items(organization = Organization.all)
     base_items = BaseItem.all.map(&:to_h)
+
     Array.wrap(organization).each do |org|
       Rails.logger.info "\n\nSeeding #{org.name}'s items...\n"
       org.seed_items(base_items)
@@ -193,7 +216,7 @@ class Organization < ApplicationRecord
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.info "[SEED] Duplicate item! #{e.record.name}"
       existing_item = items.find_by(name: e.record.name)
-      if e.to_s.match(/been taken/).present? && existing_item.other?
+      if e.to_s.match(/already exists/).present? && existing_item.other?
         Rails.logger.info "Changing Item##{existing_item.id} from Other to #{e.record.partner_key}"
         existing_item.update(partner_key: e.record.partner_key)
         existing_item.reload
@@ -244,6 +267,11 @@ class Organization < ApplicationRecord
       year = [year, distributions.minimum(:issued_at).year].min
     end
     year
+  end
+
+  def display_last_distribution_date
+    distribution = distributions.order(issued_at: :desc).first
+    distribution.nil? ? "No distributions" : distribution[:issued_at].strftime("%F")
   end
 
   private
